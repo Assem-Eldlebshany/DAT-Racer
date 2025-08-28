@@ -161,6 +161,151 @@ pip install pyserial
 - **Turn Right**: Tilt your hand to the right
 - **Quit**: Press 'q' key in the video window
 
+## Serial Monitor Commands & Debugging
+
+### Arduino Uno (Server) Serial Output
+The Arduino Uno provides detailed debugging information via Serial Monitor (9600 baud):
+
+#### Startup Messages
+```
+=================================
+Arduino Uno Server Starting...
+=================================
+Initializing nRF24L01... SUCCESS!
+nRF24L01 Configuration:
+ - Mode: Transmitter
+ - Power: LOW (close range)
+ - Data Rate: 250 KBPS
+ - Address: 00001
+=================================
+Arduino Uno Server Ready!
+Waiting for Python commands...
+=================================
+Sending initial stop command...
+Initial stop command sent successfully
+```
+
+#### Command Processing
+```
+Received from Python: 'S75A-20'
+Parsed: Speed=75% Angle=-20°
+Sending to car... SUCCESS!
+  → Sent to car: Speed=75% Angle=-20°
+```
+
+#### Error Messages
+```
+ERROR: Invalid command format. Expected S<speed>A<angle>, got: [invalid_command]
+WARNING: Failed to send stop command!
+Timeout - Car stopped
+```
+
+#### LED Indicators
+- **Solid ON**: Car is moving (speed > 0)
+- **OFF**: Car is stopped
+- **Fast Blinking**: nRF24L01 initialization error
+
+### Arduino Nano (Car) Serial Output
+The Arduino Nano displays car status and received commands (9600 baud):
+
+#### Startup Messages
+```
+Arduino Nano Car Starting...
+nRF24L01 Initialized - Receiver Mode
+Car Ready - Waiting for commands...
+```
+
+#### Command Reception
+```
+Received - Speed: 75% Angle: -20°
+Received - Speed: 0% Angle: 0°
+```
+
+#### Safety Messages
+```
+Signal lost - Emergency stop!
+WARNING: Low battery! Voltage: 4.2V
+Battery OK: 5.8V
+```
+
+#### LED Indicators
+- **Blinking**: Car is moving (blink rate ~200ms)
+- **OFF**: Car is stopped or no signal
+- **Fast Blinking on startup**: nRF24L01 initialization error
+
+### Testing Commands
+
+#### Manual Testing (Arduino Uno)
+You can manually send commands via Serial Monitor:
+```
+S0A0     → Stop car, center steering
+S50A0    → 50% speed, straight
+S100A-45 → Full speed, maximum left turn
+S25A20   → 25% speed, right turn
+```
+
+#### Diagnostic Commands
+Open both Serial Monitors simultaneously to observe:
+1. **Python → Uno communication**: Commands being sent
+2. **Uno → Nano transmission**: Wireless success/failure
+3. **Nano motor control**: Actual car response
+
+#### Signal Range Testing
+To test wireless range:
+1. Keep both Serial Monitors open
+2. Gradually move car away from computer
+3. Monitor for transmission failures on Uno
+4. Monitor for "Signal lost" messages on Nano
+
+### Common Serial Monitor Outputs
+
+#### Successful Operation
+**Uno Monitor:**
+```
+Received from Python: 'S80A-15'
+Parsed: Speed=80% Angle=-15°
+Sending to car... SUCCESS!
+  → Sent to car: Speed=80% Angle=-15°
+```
+
+**Nano Monitor:**
+```
+Received - Speed: 80% Angle: -15°
+```
+
+#### Connection Issues
+**Uno Monitor:**
+```
+Sending to car... FAILED!
+  ✗ Transmission failed - possible causes:
+```
+
+**Nano Monitor:**
+```
+Signal lost - Emergency stop!
+```
+
+#### Power Issues
+**Nano Monitor:**
+```
+WARNING: Low battery! Voltage: 4.2V
+```
+
+### Troubleshooting with Serial Monitor
+
+#### No Commands from Python
+- **Uno shows**: "Waiting for Python commands..." (no new messages)
+- **Solution**: Check Python script and serial port configuration
+
+#### Wireless Transmission Failures  
+- **Uno shows**: "Sending to car... FAILED!"
+- **Nano shows**: No new messages or "Signal lost"
+- **Solution**: Check nRF24L01 wiring, power (3.3V!), and range
+
+#### Motor Not Responding
+- **Nano shows**: Commands received but car doesn't move
+- **Solution**: Check L298N wiring, battery voltage, motor connections
+
 ### Troubleshooting
 
 #### No Arduino Connection
