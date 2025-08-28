@@ -65,20 +65,20 @@ The project consists of three main components:
 ### Arduino Uno (Server) + nRF24L01
 ```
 nRF24L01    Arduino Uno
-VCC      →  3.3V (NOT 5V!)
+VCC      →  3.3V
 GND      →  GND
 CE       →  Pin 9
 CSN      →  Pin 10
 SCK      →  Pin 13
 MOSI     →  Pin 11
 MISO     →  Pin 12
-LED      →  Pin 13 (built-in)
+LED      →  Pin 13
 ```
 
 ### Arduino Nano (Car) + L298N + nRF24L01
 ```
 nRF24L01    Arduino Nano
-VCC      →  3.3V (NOT 5V!)
+VCC      →  3.3V
 GND      →  GND
 CE       →  Pin 9
 CSN      →  Pin 10
