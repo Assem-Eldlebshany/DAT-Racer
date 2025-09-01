@@ -1,20 +1,35 @@
 # DAT-Racer 🏎️
-**vroom vroom** - Hand Gesture Controlled 4WD Arduino Car
+**vroom vroom** - Hand Gesture Controlled 4WD Arduino Car (Single & Multiplayer)
 
 ## Overview
-DAT-Racer is a hand gesture-controlled 4WD car system that uses computer vision to track hand movements and wirelessly control an Arduino-based car. The system uses MediaPipe for hand tracking, OpenCV for computer vision processing, and nRF24L01 modules for wireless communication between a computer and the remote-controlled car.
+DAT-Racer is a hand gesture-controlled 4WD car system that uses computer vision to track hand movements and wirelessly control Arduino-based cars. The system uses MediaPipe for hand tracking, OpenCV for computer vision processing, and nRF24L01 modules for wireless communication. 
+
+**Now with multiplayer support!** Race against a friend with two cars controlled simultaneously.
+
+## Game Modes
+
+### 🎮 Single Player Mode
+One player controls one car using hand gestures captured by the webcam.
+
+### 🏁 Two Player Mode (Racing)
+Two players control two separate cars simultaneously using split-screen hand tracking - left side controls Car 1, right side controls Car 2.
 
 ## System Architecture
 
-The project consists of three main components:
-
-1. **Computer Vision Controller** (`controller.py`) - Captures hand gestures via webcam
-2. **Arduino Uno Server** (`Uno_code_final.ino`) - Receives commands from computer and transmits wirelessly
-3. **Arduino Nano Car** (`Nano_code_final.ino`) - Receives wireless commands and controls the 4WD car
-
+### Single Player Setup
 ```
 [Computer + Webcam] → [Arduino Uno + nRF24L01] → [Arduino Nano + nRF24L01 + 4WD Car]
      controller.py        Uno_code_final.ino         Nano_code_final.ino
+```
+
+### Two Player Setup
+```
+[Computer + Webcam] → [Arduino Uno + nRF24L01] → [Car 1: Arduino Nano + nRF24L01]
+  multi_controller.py    Uno_code_final_multi.ino    ↓
+                                                    [Car 2: Arduino Nano + nRF24L01]
+                                                    
+Car 1: Nano_code_final_multi.ino (Address: "00001")
+Car 2: Nano_code_final_multi.ino (Address: "00002" - modify in code)
 ```
 
 ## Features
@@ -29,17 +44,27 @@ The project consists of three main components:
   - Tilt right = turn right (+45° max)
   - Flat hand = straight driving
 
+### Multiplayer Features (Two Player Mode)
+- **Split Screen Control**: Screen divided into two zones
+  - Left half controls Car 1 (Player 1)
+  - Right half controls Car 2 (Player 2)
+- **Independent Control**: Each car responds only to its designated hand
+- **Visual Indicators**: Real-time display of both players' controls
+- **Simultaneous Racing**: Both cars can be controlled at the same time
+
 ### Safety Features
-- **Timeout Protection**: Car stops if no commands received within 500ms
+- **Timeout Protection**: Cars stop if no commands received within 500ms
 - **Signal Loss Detection**: Emergency stop if wireless connection lost
-- **Hand Detection**: Car stops when no hand is detected in frame
+- **Hand Detection**: Cars stop when no hand is detected in their zone
 - **Value Validation**: All speed and angle values are constrained to safe ranges
+- **Independent Safety**: Each car has its own safety systems
 
 ### Visual Feedback
 - Real-time hand landmark visualization
-- Speed bar display (0-100%)
-- Angle indicator with visual compass
+- Speed bar display (0-100%) for each player
+- Angle indicator with visual compass for each car
 - Connection status display
+- Player zone indicators (Player 1/Player 2)
 - Control value smoothing for stable operation
 
 ## Hardware Requirements
@@ -51,7 +76,7 @@ The project consists of three main components:
 - Connecting wires
 - USB cable for Arduino
 
-### Car Side
+### Car Side (Per Car)
 - Arduino Nano
 - nRF24L01 wireless module
 - L298N motor driver
@@ -59,6 +84,8 @@ The project consists of three main components:
 - 4 AA battery pack (6V)
 - LED indicator
 - Connecting wires
+
+**For Two Player Mode**: You need 2 complete car setups
 
 ## Wiring Diagrams
 
@@ -75,7 +102,7 @@ MISO     →  Pin 12
 LED      →  Pin 13
 ```
 
-### Arduino Nano (Car) + L298N + nRF24L01
+### Arduino Nano (Each Car) + L298N + nRF24L01
 ```
 nRF24L01    Arduino Nano
 VCC      →  3.3V
@@ -119,39 +146,74 @@ pip install pyserial
 
 ## Installation & Setup
 
-### 1. Hardware Assembly
-1. Wire the Arduino Uno with nRF24L01 module according to the wiring diagram
-2. Assemble the 4WD car with Arduino Nano, L298N motor driver, and nRF24L01
-3. Connect motors to L298N driver
-4. Install batteries and test power connections
+### Single Player Setup
 
-### 2. Arduino Programming
+#### 1. Hardware Assembly
+1. Wire the Arduino Uno with nRF24L01 module
+2. Assemble the 4WD car with Arduino Nano, L298N, and nRF24L01
+3. Connect motors to L298N driver
+4. Install batteries and test power
+
+#### 2. Arduino Programming
 1. Upload `Uno_code_final.ino` to the Arduino Uno
 2. Upload `Nano_code_final.ino` to the Arduino Nano
-3. Verify both Arduinos boot successfully and establish wireless connection
+3. Verify wireless connection established
 
-### 3. Python Setup
+#### 3. Python Setup
 1. Install required Python packages
-2. Update the serial port in `controller.py` (line 235):
+2. Update serial port in `controller.py` (line 235):
    ```python
-   # Change to your Arduino Uno's serial port
    controller = HandGestureController(serial_port='/dev/cu.usbmodem101', baudrate=9600)
    ```
-   - **Windows**: Usually `'COM3'`, `'COM4'`, etc.
-   - **macOS**: Usually `'/dev/cu.usbmodem101'` or similar
-   - **Linux**: Usually `'/dev/ttyUSB0'` or `'/dev/ttyACM0'`
+
+### Two Player Setup
+
+#### 1. Hardware Assembly
+1. Wire the Arduino Uno with nRF24L01 module
+2. Assemble TWO 4WD cars, each with Arduino Nano, L298N, and nRF24L01
+3. Connect motors to L298N drivers on both cars
+4. Install batteries in both cars
+
+#### 2. Arduino Programming
+1. Upload `Uno_code_final_multi.ino` to the Arduino Uno (server)
+2. Upload `Nano_code_final_multi.ino` to Car 1's Arduino Nano
+3. Modify `Nano_code_final_multi.ino` for Car 2:
+   ```cpp
+   // Change this line for Car 2:
+   const byte address[6] = "00002"; // Car 2 address
+   ```
+4. Upload modified code to Car 2's Arduino Nano
+5. Verify both cars receive initial stop commands
+
+#### 3. Python Setup
+1. Install required Python packages
+2. Update serial port in `multi_controller.py`:
+   ```python
+   controller = TwoPlayerHandGestureController(serial_port='/dev/cu.usbmodem1101', baudrate=9600)
+   ```
 
 ## Usage
 
-### Starting the System
-1. **Power on the car** (Arduino Nano + motors)
+### Starting Single Player Mode
+1. **Power on the car**
 2. **Connect Arduino Uno** to computer via USB
-3. **Run the Python controller**:
+3. **Run the controller**:
    ```bash
    python controller.py
    ```
 4. **Position your hand** in front of the webcam
 5. **Control the car** with hand gestures!
+
+### Starting Two Player Mode
+1. **Power on both cars**
+2. **Connect Arduino Uno** to computer via USB
+3. **Run the multiplayer controller**:
+   ```bash
+   python multi_controller.py
+   ```
+4. **Player 1**: Position hand on LEFT side of screen
+5. **Player 2**: Position hand on RIGHT side of screen
+6. **Race!** Both players can control their cars simultaneously
 
 ### Controls
 - **Stop**: Open your hand completely (spread all fingers)
@@ -163,200 +225,96 @@ pip install pyserial
 
 ## Serial Monitor Commands & Debugging
 
-### Arduino Uno (Server) Serial Output
-The Arduino Uno provides detailed debugging information via Serial Monitor (9600 baud):
+### Single Player Mode
 
-#### Startup Messages
-```
-=================================
-Arduino Uno Server Starting...
-=================================
-Initializing nRF24L01... SUCCESS!
-nRF24L01 Configuration:
- - Mode: Transmitter
- - Power: LOW (close range)
- - Data Rate: 250 KBPS
- - Address: 00001
-=================================
-Arduino Uno Server Ready!
-Waiting for Python commands...
-=================================
-Sending initial stop command...
-Initial stop command sent successfully
-```
-
-#### Command Processing
+#### Arduino Uno Serial Output (9600 baud)
 ```
 Received from Python: 'S75A-20'
 Parsed: Speed=75% Angle=-20°
 Sending to car... SUCCESS!
-  → Sent to car: Speed=75% Angle=-20°
 ```
 
-#### Error Messages
-```
-ERROR: Invalid command format. Expected S<speed>A<angle>, got: [invalid_command]
-WARNING: Failed to send stop command!
-Timeout - Car stopped
-```
-
-#### LED Indicators
-- **Solid ON**: Car is moving (speed > 0)
-- **OFF**: Car is stopped
-- **Fast Blinking**: nRF24L01 initialization error
-
-### Arduino Nano (Car) Serial Output
-The Arduino Nano displays car status and received commands (9600 baud):
-
-#### Startup Messages
-```
-Arduino Nano Car Starting...
-nRF24L01 Initialized - Receiver Mode
-Car Ready - Waiting for commands...
-```
-
-#### Command Reception
+#### Arduino Nano Serial Output (9600 baud)
 ```
 Received - Speed: 75% Angle: -20°
-Received - Speed: 0% Angle: 0°
 ```
 
-#### Safety Messages
+### Two Player Mode
+
+#### Arduino Uno Serial Output (9600 baud)
 ```
-Signal lost - Emergency stop!
-WARNING: Low battery! Voltage: 4.2V
-Battery OK: 5.8V
+Received: 'C1S50A-20C2S75A10'
+Car 1: Speed=50% Angle=-20° [Car1:OK]
+Car 2: Speed=75% Angle=10° [Car2:OK]
 ```
 
-#### LED Indicators
-- **Blinking**: Car is moving (blink rate ~200ms)
-- **OFF**: Car is stopped or no signal
-- **Fast Blinking on startup**: nRF24L01 initialization error
+#### Car 1 Nano Serial Output
+```
+=====================================
+Arduino Nano CAR 1 Starting...
+Address: 00001 (Player 1 - Left Side)
+=====================================
+Car 1 Received - Speed: 50% Angle: -20°
+```
 
-### Testing Commands
+#### Car 2 Nano Serial Output
+```
+=====================================
+Arduino Nano CAR 2 Starting...
+Address: 00002 (Player 2 - Right Side)
+=====================================
+Car 2 Received - Speed: 75% Angle: 10°
+```
 
-#### Manual Testing (Arduino Uno)
-You can manually send commands via Serial Monitor:
+### Manual Testing Commands
+
+#### Single Player (via Uno Serial Monitor)
 ```
 S0A0     → Stop car, center steering
 S50A0    → 50% speed, straight
 S100A-45 → Full speed, maximum left turn
-S25A20   → 25% speed, right turn
 ```
 
-#### Diagnostic Commands
-Open both Serial Monitors simultaneously to observe:
-1. **Python → Uno communication**: Commands being sent
-2. **Uno → Nano transmission**: Wireless success/failure
-3. **Nano motor control**: Actual car response
-
-#### Signal Range Testing
-To test wireless range:
-1. Keep both Serial Monitors open
-2. Gradually move car away from computer
-3. Monitor for transmission failures on Uno
-4. Monitor for "Signal lost" messages on Nano
-
-### Common Serial Monitor Outputs
-
-#### Successful Operation
-**Uno Monitor:**
+#### Two Player (via Uno Serial Monitor)
 ```
-Received from Python: 'S80A-15'
-Parsed: Speed=80% Angle=-15°
-Sending to car... SUCCESS!
-  → Sent to car: Speed=80% Angle=-15°
+C1S0A0C2S0A0       → Stop both cars
+C1S50A0C2S50A0     → Both cars 50% speed, straight
+C1S100A-45C2S100A45 → Car 1 full left, Car 2 full right
 ```
 
-**Nano Monitor:**
-```
-Received - Speed: 80% Angle: -15°
-```
+## Troubleshooting
 
-#### Connection Issues
-**Uno Monitor:**
-```
-Sending to car... FAILED!
-  ✗ Transmission failed - possible causes:
-```
+### Single Car Issues
+- **No Arduino Connection**: Check USB cable and serial port in code
+- **Poor Hand Detection**: Ensure good lighting and clear background
+- **Car Not Responding**: Check nRF24L01 wiring (3.3V!), battery voltage
+- **Weak Motors**: Check battery voltage (>5V), adjust PWM values in code
 
-**Nano Monitor:**
-```
-Signal lost - Emergency stop!
-```
+### Multiplayer Specific Issues
 
-#### Power Issues
-**Nano Monitor:**
-```
-WARNING: Low battery! Voltage: 4.2V
-```
+#### Car 1 works but Car 2 doesn't
+- Verify Car 2's address is set to "00002" in its Nano code
+- Check Car 2's nRF24L01 wiring and power
+- Monitor Arduino Uno serial output for "[Car2:FAIL]" messages
 
-### Troubleshooting with Serial Monitor
+#### Hands detected on wrong side
+- Ensure players are positioned correctly (Player 1 = left, Player 2 = right)
+- Check camera is not mirrored incorrectly
+- Verify split-screen detection in Python output
 
-#### No Commands from Python
-- **Uno shows**: "Waiting for Python commands..." (no new messages)
-- **Solution**: Check Python script and serial port configuration
+#### Cross-control (hands controlling wrong car)
+- Check address configuration in both Nano codes
+- Verify Uno_code_final_multi.ino is uploaded (not single player version)
+- Ensure multi_controller.py is running (not controller.py)
 
-#### Wireless Transmission Failures  
-- **Uno shows**: "Sending to car... FAILED!"
-- **Nano shows**: No new messages or "Signal lost"
-- **Solution**: Check nRF24L01 wiring, power (3.3V!), and range
-
-#### Motor Not Responding
-- **Nano shows**: Commands received but car doesn't move
-- **Solution**: Check L298N wiring, battery voltage, motor connections
-
-### Troubleshooting
-
-#### No Arduino Connection
-- Check USB cable and drivers
-- Verify correct serial port in code
-- The system will run in "Demo Mode" without Arduino
-
-#### Poor Hand Detection
-- Ensure good lighting
-- Keep hand clearly visible in frame
-- Avoid background clutter
-- Camera should be at eye level
-
-#### Car Not Responding
-- Check nRF24L01 wiring (especially 3.3V power!)
-- Verify both Arduinos are powered
-- Check motor driver connections
-- Ensure batteries are charged
-
-#### Weak Motor Performance
-- Check battery voltage (should be >5V for 4 AA batteries)
-- Verify L298N connections
-- Motors may need higher PWM values (adjust in code)
-
-## Technical Details
-
-### Communication Protocol
-- **Python ↔ Arduino Uno**: Serial communication via USB
-  - Format: `S<speed>A<angle>\n`
-  - Example: `S75A-20\n` (75% speed, -20° turn)
-
-- **Arduino Uno ↔ Arduino Nano**: nRF24L01 wireless
-  - Data structure: `{int speed; int angle;}`
-  - Frequency: 2.4GHz
-  - Range: ~100m (line of sight)
-
-### Hand Tracking Algorithm
-- Uses MediaPipe hand landmarks (21 points per hand)
-- **Speed calculation**: Distance ratio between fingertips and palm
-- **Angle calculation**: Tilt angle of line between knuckles
-- **Smoothing**: Low-pass filter for stable control
-
-### Motor Control
-- **Differential steering**: Different speeds for left/right motors
-- **Sharp turns**: Inner wheel reversal for tighter turning radius
-- **PWM control**: Variable speed using PWM signals (120-255 range)
+#### Both cars move together
+- This indicates both Nanos have the same address
+- Re-upload code to Car 2 with address "00002"
 
 ## Customization
 
 ### Adjusting Sensitivity
-In `controller.py`, modify these parameters:
+In `controller.py` or `multi_controller.py`:
 ```python
 # Hand detection confidence
 min_detection_confidence=0.7    # Lower = more sensitive
@@ -367,7 +325,7 @@ alpha = 0.7  # Higher = less smooth, more responsive
 ```
 
 ### Motor Performance Tuning
-In `Nano_code_final.ino`, adjust PWM ranges:
+In `Nano_code_final.ino` or `Nano_code_final_multi.ino`:
 ```cpp
 // Minimum PWM for motor startup
 baseSpeed = map(speed, 1, 100, 120, 255);  // Increase 120 if motors don't start
@@ -382,13 +340,40 @@ Increase transmission power for longer range:
 radio.setPALevel(RF24_PA_HIGH);  // Options: LOW, HIGH, MAX
 ```
 
+### Adding More Cars
+To add a third car:
+1. Define new address in Uno code: `const byte address3[6] = "00003";`
+2. Add parsing for C3 commands in Uno code
+3. Modify Python controller to handle 3+ hand zones
+4. Upload modified Nano code with address "00003" to Car 3
+
+## Competition Ideas
+
+### Racing Modes
+- **Time Trial**: Fastest lap around a track
+- **Obstacle Course**: Navigate through cones
+- **Capture the Flag**: Grab objects and return to base
+- **Tag**: One car chases the other
+- **Synchronized Dancing**: Both cars perform same movements
+
+### Scoring System Ideas
+- Add lap counters using IR sensors
+- Implement checkpoint system
+- Create penalty zones
+- Add power-up areas with different speed limits
+
 ## Future Enhancements
-- Multiple car control (racing mode)
-- Obstacle avoidance using ultrasonic sensors
-- FPV camera integration
-- Mobile app control interface
-- Voice commands integration
-- Racing lap timer and scoring system
+- [ ] Support for 4+ players
+- [ ] Mobile app control interface
+- [ ] FPV camera integration on each car
+- [ ] Obstacle detection with ultrasonic sensors
+- [ ] Voice commands integration
+- [ ] Online multiplayer over network
+- [ ] AI opponent mode
+- [ ] Gesture-based special moves (jump, spin, boost)
+- [ ] LED strips for car customization
+- [ ] Sound effects and music
+- [ ] Replay system for races
 
 ## License
 This project is open source. Feel free to modify and improve!
@@ -399,3 +384,5 @@ Pull requests are welcome! Please feel free to submit bug reports, feature reque
 ---
 
 **Happy Racing! 🏁**
+
+*May the best hand win!*
