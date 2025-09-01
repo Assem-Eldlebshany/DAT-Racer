@@ -25,7 +25,7 @@ Two players control two separate cars simultaneously using split-screen hand tra
 ### Two Player Setup
 ```
 [Computer + Webcam] → [Arduino Uno + nRF24L01] → [Car 1: Arduino Nano + nRF24L01]
-  multi_controller.py    Uno_code_final_multi.ino    ↓
+  controller.py    Uno_code_final_multi.ino    ↓
                                                     [Car 2: Arduino Nano + nRF24L01]
                                                     
 Car 1: Nano_code_final_multi.ino (Address: "00001")
@@ -187,7 +187,7 @@ pip install pyserial
 
 #### 3. Python Setup
 1. Install required Python packages
-2. Update serial port in `multi_controller.py`:
+2. Update serial port in `controller.py`:
    ```python
    controller = TwoPlayerHandGestureController(serial_port='/dev/cu.usbmodem1101', baudrate=9600)
    ```
@@ -209,7 +209,7 @@ pip install pyserial
 2. **Connect Arduino Uno** to computer via USB
 3. **Run the multiplayer controller**:
    ```bash
-   python multi_controller.py
+   python controller.py
    ```
 4. **Player 1**: Position hand on LEFT side of screen
 5. **Player 2**: Position hand on RIGHT side of screen
@@ -305,7 +305,7 @@ C1S100A-45C2S100A45 → Car 1 full left, Car 2 full right
 #### Cross-control (hands controlling wrong car)
 - Check address configuration in both Nano codes
 - Verify Uno_code_final_multi.ino is uploaded (not single player version)
-- Ensure multi_controller.py is running (not controller.py)
+- Ensure controller.py is running (not controller.py)
 
 #### Both cars move together
 - This indicates both Nanos have the same address
@@ -314,7 +314,7 @@ C1S100A-45C2S100A45 → Car 1 full left, Car 2 full right
 ## Customization
 
 ### Adjusting Sensitivity
-In `controller.py` or `multi_controller.py`:
+In `controller.py`:
 ```python
 # Hand detection confidence
 min_detection_confidence=0.7    # Lower = more sensitive
