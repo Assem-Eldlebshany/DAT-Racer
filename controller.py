@@ -6,10 +6,11 @@ import time
 import math
 
 
-class HandGestureController:
-    def __init__(self, serial_port='/dev/cu.usbmodem101', baudrate=9600):
+class TwoPlayerHandGestureController:
+    def __init__(self, serial_port='/dev/cu.usbmodem1101', baudrate=9600):
         """
-        Initialize the hand gesture controller for a single player.
+        Initialize the hand gesture controller for two players.
+        Left side of screen controls Car 1, right side controls Car 2.
 
         Args:
             serial_port: Serial port for Arduino communication
@@ -19,13 +20,13 @@ class HandGestureController:
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
-            max_num_hands=1,  # Single player
+            max_num_hands=2,  # Two players
             min_detection_confidence=0.7,
             min_tracking_confidence=0.5
         )
         self.mp_drawing = mp.solutions.drawing_utils
 
-        # Initialize serial communication (uncomment when Arduino is connected)
+        # Initialize serial communication
         try:
             self.serial_conn = serial.Serial(serial_port, baudrate, timeout=1)
             time.sleep(2)  # Wait for Arduino to initialize
@@ -34,9 +35,15 @@ class HandGestureController:
             self.serial_conn = None
             print("Arduino not connected - running in demo mode")
 
-        # Control parameters
-        self.current_speed = 0
-        self.current_angle = 0
+        # Control parameters for each car
+        self.car1_speed = 0
+        self.car1_angle = 0
+        self.car2_speed = 0
+        self.car2_angle = 0
+
+        # Track which side has a hand
+        self.left_hand_detected = False
+        self.right_hand_detected = False
 
     def calculate_hand_openness(self, hand_landmarks):
         """
@@ -94,100 +101,138 @@ class HandGestureController:
         Calculate the horizontal tilt of the hand in degrees.
         Range: -45 to +45 degrees (negative = left tilt, positive = right tilt)
         """
-        # Get wrist and middle finger MCP for hand orientation
+        # Get wrist and middle finger base for better reference
         wrist = hand_landmarks.landmark[self.mp_hands.HandLandmark.WRIST]
         middle_mcp = hand_landmarks.landmark[self.mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
 
-        # Get index and pinky MCP for tilt calculation
-        index_mcp = hand_landmarks.landmark[self.mp_hands.HandLandmark.INDEX_FINGER_MCP]
-        pinky_mcp = hand_landmarks.landmark[self.mp_hands.HandLandmark.PINKY_MCP]
+        # Calculate vertical axis of the hand (wrist to middle MCP)
+        hand_dx = middle_mcp.x - wrist.x
+        hand_dy = middle_mcp.y - wrist.y
 
-        # Calculate tilt based on the line between index and pinky MCPs
-        # In normalized coordinates, x goes from 0 (left) to 1 (right)
-        # y goes from 0 (top) to 1 (bottom)
-
-        # Calculate angle of the line from index to pinky
-        dx = pinky_mcp.x - index_mcp.x
-        dy = pinky_mcp.y - index_mcp.y
-
-        # Calculate angle in radians and convert to degrees
-        angle_rad = math.atan2(dy, dx)
+        # Calculate angle from vertical (0 degrees is straight up)
+        angle_rad = math.atan2(hand_dx, -hand_dy)  # Negative y because y increases downward
         angle_deg = math.degrees(angle_rad)
 
-        # Normalize to -45 to +45 range
-        # When hand is flat (horizontal line), angle should be close to 0
-        # Adjust based on typical hand orientation
-        tilt_angle = angle_deg
+        # Apply dead zone - if hand is nearly straight, return 0
+        if abs(angle_deg) < 15:  # Dead zone of ±15 degrees
+            return 0
 
-        # Clamp to -45 to +45 range
-        tilt_angle = max(-45, min(45, tilt_angle))
+        # Scale the angle more gradually
+        if angle_deg > 0:
+            # Right tilt - scale from 15-90 degrees to 0-45
+            tilt_angle = min(45, (angle_deg - 15) * 0.6)
+        else:
+            # Left tilt - scale from -15 to -90 degrees to 0 to -45
+            tilt_angle = max(-45, (angle_deg + 15) * 0.6)
 
         return tilt_angle
 
-    def send_command_to_arduino(self, speed, angle):
+    def send_commands_to_arduino(self):
         """
-        Send control commands to Arduino.
-
-        Args:
-            speed: 0-100 (percentage)
-            angle: -45 to +45 degrees
+        Send control commands for both cars to Arduino.
+        Format: "C1S<speed>A<angle>C2S<speed>A<angle>\n"
         """
         if self.serial_conn:
-            # Format: "S<speed>A<angle>\n"
-            command = f"S{int(speed)}A{int(angle)}\n"
+            # Create command for both cars
+            command = f"C1S{int(self.car1_speed)}A{int(self.car1_angle)}C2S{int(self.car2_speed)}A{int(self.car2_angle)}\n"
             try:
                 self.serial_conn.write(command.encode())
-            except:
-                print(f"Failed to send command: {command}")
+                print(f"Sent: {command.strip()}")
+            except Exception as e:
+                print(f"Failed to send command: {e}")
+        else:
+            print(
+                f"Demo: Car1[S:{int(self.car1_speed)}% A:{int(self.car1_angle)}°] Car2[S:{int(self.car2_speed)}% A:{int(self.car2_angle)}°]")
 
-    def draw_control_info(self, image, speed, angle):
+    def draw_control_info(self, image, car1_speed, car1_angle, car2_speed, car2_angle):
         """
-        Draw control information on the image.
+        Draw control information for both cars on the image.
         """
         h, w, _ = image.shape
 
-        # Draw speed bar
-        cv2.putText(image, f"Speed: {speed:.0f}%", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        bar_length = int(200 * (speed / 100))
-        cv2.rectangle(image, (10, 40), (210, 60), (100, 100, 100), 2)
-        cv2.rectangle(image, (10, 40), (10 + bar_length, 60), (0, 255, 0), -1)
+        # Draw center dividing line
+        cv2.line(image, (w // 2, 0), (w // 2, h), (255, 255, 255), 2)
 
-        # Draw angle indicator
-        cv2.putText(image, f"Angle: {angle:.0f}°", (10, 90),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        # Draw "PLAYER 1" and "PLAYER 2" labels
+        cv2.putText(image, "PLAYER 1 (CAR 1)", (w // 4 - 60, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        cv2.putText(image, "PLAYER 2 (CAR 2)", (3 * w // 4 - 60, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
-        # Draw angle visualization
-        center_x = 110
-        center_y = 120
-        radius = 40
-        cv2.circle(image, (center_x, center_y), radius, (100, 100, 100), 2)
+        # Car 1 info (left side)
+        cv2.putText(image, f"Speed: {car1_speed:.0f}%", (10, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        bar1_length = int(150 * (car1_speed / 100))
+        cv2.rectangle(image, (10, 70), (160, 90), (100, 100, 100), 2)
+        cv2.rectangle(image, (10, 70), (10 + bar1_length, 90), (0, 255, 0), -1)
 
-        # Draw angle line
-        angle_rad = math.radians(-angle)  # Negative for correct visual orientation
-        end_x = int(center_x + radius * math.cos(angle_rad))
-        end_y = int(center_y + radius * math.sin(angle_rad))
-        cv2.line(image, (center_x, center_y), (end_x, end_y), (0, 0, 255), 3)
+        cv2.putText(image, f"Angle: {car1_angle:.0f}°", (10, 120),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
-        # Draw status
+        # Car 1 angle visualization
+        center1_x = 85
+        center1_y = 150
+        radius = 30
+        cv2.circle(image, (center1_x, center1_y), radius, (100, 100, 100), 2)
+        angle1_rad = math.radians(-car1_angle)
+        end1_x = int(center1_x + radius * math.cos(angle1_rad))
+        end1_y = int(center1_y + radius * math.sin(angle1_rad))
+        cv2.line(image, (center1_x, center1_y), (end1_x, end1_y), (0, 0, 255), 3)
+
+        # Car 2 info (right side)
+        car2_x_offset = w // 2 + 10
+        cv2.putText(image, f"Speed: {car2_speed:.0f}%", (car2_x_offset, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        bar2_length = int(150 * (car2_speed / 100))
+        cv2.rectangle(image, (car2_x_offset, 70), (car2_x_offset + 150, 90), (100, 100, 100), 2)
+        cv2.rectangle(image, (car2_x_offset, 70), (car2_x_offset + bar2_length, 90), (0, 255, 0), -1)
+
+        cv2.putText(image, f"Angle: {car2_angle:.0f}°", (car2_x_offset, 120),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+        # Car 2 angle visualization
+        center2_x = car2_x_offset + 75
+        center2_y = 150
+        cv2.circle(image, (center2_x, center2_y), radius, (100, 100, 100), 2)
+        angle2_rad = math.radians(-car2_angle)
+        end2_x = int(center2_x + radius * math.cos(angle2_rad))
+        end2_y = int(center2_y + radius * math.sin(angle2_rad))
+        cv2.line(image, (center2_x, center2_y), (end2_x, end2_y), (0, 0, 255), 3)
+
+        # Draw hand detection status
+        left_status = "Hand Detected" if self.left_hand_detected else "No Hand"
+        right_status = "Hand Detected" if self.right_hand_detected else "No Hand"
+        left_color = (0, 255, 0) if self.left_hand_detected else (0, 0, 255)
+        right_color = (0, 255, 0) if self.right_hand_detected else (0, 0, 255)
+
+        cv2.putText(image, left_status, (10, h - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, left_color, 2)
+        cv2.putText(image, right_status, (car2_x_offset, h - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, right_color, 2)
+
+        # Draw connection status
         status = "Arduino Connected" if self.serial_conn else "Demo Mode"
-        cv2.putText(image, status, (10, h - 20),
+        cv2.putText(image, status, (w // 2 - 60, h - 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
     def run(self):
         """
-        Main loop for hand gesture control.
+        Main loop for two-player hand gesture control.
         """
         cap = cv2.VideoCapture(0)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-        print("Hand Gesture Car Controller Started")
+        print("\n" + "=" * 60)
+        print("Two-Player Hand Gesture Car Controller Started")
+        print("=" * 60)
         print("Controls:")
-        print("- Open hand = 0% speed (stop)")
-        print("- Closed fist = 100% speed (full speed)")
-        print("- Tilt hand left/right = turn left/right (-45° to +45°)")
-        print("- Press 'q' to quit")
+        print("  LEFT SIDE (Player 1/Car 1)  |  RIGHT SIDE (Player 2/Car 2)")
+        print("  - Open hand = 0% speed      |  - Open hand = 0% speed")
+        print("  - Closed fist = 100% speed  |  - Closed fist = 100% speed")
+        print("  - Tilt hand = turn          |  - Tilt hand = turn")
+        print("  - Press 'q' to quit")
+        print("=" * 60 + "\n")
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -197,6 +242,7 @@ class HandGestureController:
 
             # Flip the frame horizontally for selfie-view
             frame = cv2.flip(frame, 1)
+            h, w, _ = frame.shape
 
             # Convert BGR to RGB
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -209,44 +255,82 @@ class HandGestureController:
             rgb_frame.flags.writeable = True
             frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
 
-            # If hand detected
+            # Reset detection flags
+            self.left_hand_detected = False
+            self.right_hand_detected = False
+
+            # Temporary values for smoothing
+            new_car1_speed = 0
+            new_car1_angle = 0
+            new_car2_speed = 0
+            new_car2_angle = 0
+
+            # Process detected hands
             if results.multi_hand_landmarks:
-                hand_landmarks = results.multi_hand_landmarks[0]
+                for hand_landmarks in results.multi_hand_landmarks:
+                    # Draw hand landmarks
+                    self.mp_drawing.draw_landmarks(
+                        frame, hand_landmarks, self.mp_hands.HAND_CONNECTIONS,
+                        self.mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2, circle_radius=2),
+                        self.mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2)
+                    )
 
-                # Draw hand landmarks
-                self.mp_drawing.draw_landmarks(
-                    frame, hand_landmarks, self.mp_hands.HAND_CONNECTIONS,
-                    self.mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2, circle_radius=2),
-                    self.mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2)
-                )
+                    # Get hand center position (using wrist)
+                    wrist = hand_landmarks.landmark[self.mp_hands.HandLandmark.WRIST]
+                    hand_x = wrist.x * w
 
-                # Calculate control values
-                openness = self.calculate_hand_openness(hand_landmarks)
-                speed = openness * 100  # Convert to percentage
+                    # Calculate control values
+                    openness = self.calculate_hand_openness(hand_landmarks)
+                    speed = openness * 100
 
-                tilt = self.calculate_hand_tilt(hand_landmarks)
+                    # Apply threshold - no movement if hand is less than 15% open
+                    if speed < 15:
+                        speed = 0
 
-                # Smooth the values (simple low-pass filter)
-                alpha = 0.7  # Smoothing factor
-                self.current_speed = alpha * speed + (1 - alpha) * self.current_speed
-                self.current_angle = alpha * tilt + (1 - alpha) * self.current_angle
+                    tilt = self.calculate_hand_tilt(hand_landmarks)
 
-                # Send command to Arduino
-                self.send_command_to_arduino(self.current_speed, self.current_angle)
+                    # Determine which side the hand is on
+                    if hand_x < w / 2:
+                        # Left side - Car 1
+                        self.left_hand_detected = True
+                        new_car1_speed = speed
+                        new_car1_angle = tilt
+                    else:
+                        # Right side - Car 2
+                        self.right_hand_detected = True
+                        new_car2_speed = speed
+                        new_car2_angle = tilt
 
+            # Smooth the values (simple low-pass filter)
+            alpha = 0.7  # Smoothing factor
+
+            # Update Car 1 controls
+            if self.left_hand_detected:
+                self.car1_speed = alpha * new_car1_speed + (1 - alpha) * self.car1_speed
+                self.car1_angle = alpha * new_car1_angle + (1 - alpha) * self.car1_angle
             else:
-                # No hand detected - stop the car
-                self.current_speed = 0
-                self.current_angle = 0
-                self.send_command_to_arduino(0, 0)
-                cv2.putText(frame, "No hand detected", (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                # No hand on left side - stop Car 1
+                self.car1_speed = 0
+                self.car1_angle = 0
+
+            # Update Car 2 controls
+            if self.right_hand_detected:
+                self.car2_speed = alpha * new_car2_speed + (1 - alpha) * self.car2_speed
+                self.car2_angle = alpha * new_car2_angle + (1 - alpha) * self.car2_angle
+            else:
+                # No hand on right side - stop Car 2
+                self.car2_speed = 0
+                self.car2_angle = 0
+
+            # Send commands to Arduino for both cars
+            self.send_commands_to_arduino()
 
             # Draw control information
-            self.draw_control_info(frame, self.current_speed, self.current_angle)
+            self.draw_control_info(frame, self.car1_speed, self.car1_angle,
+                                   self.car2_speed, self.car2_angle)
 
             # Display the frame
-            cv2.imshow('Hand Gesture Car Controller', frame)
+            cv2.imshow('Two-Player Hand Gesture Car Controller', frame)
 
             # Break on 'q' key press
             if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -256,15 +340,19 @@ class HandGestureController:
         cap.release()
         cv2.destroyAllWindows()
         if self.serial_conn:
-            self.send_command_to_arduino(0, 0)  # Stop the car
+            # Stop both cars
+            self.car1_speed = 0
+            self.car1_angle = 0
+            self.car2_speed = 0
+            self.car2_angle = 0
+            self.send_commands_to_arduino()
             self.serial_conn.close()
             print("Arduino connection closed")
 
 
 if __name__ == "__main__":
     # Create controller instance
-    # Change 'COM3' to your Arduino's serial port (e.g., '/dev/ttyUSB0' on Linux)
-    controller = HandGestureController(serial_port='/dev/cu.usbmodem101', baudrate=9600)
+    controller = TwoPlayerHandGestureController(serial_port='/dev/cu.usbmodem1101', baudrate=9600)
 
     # Run the controller
     controller.run()
